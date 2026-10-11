@@ -1,0 +1,21 @@
+{
+  "name": "multi-ai-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "多 AI 聚合工作台：把一条消息（文字+图片）同时分发给 DeepSeek / 豆包 / Kimi",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "npm run dev --workspace @maw/server",
+    "dev:web": "npm run dev --workspace @maw/web",
+    "build": "npm run build --workspace @maw/web",
+    "typecheck": "npm run typecheck --workspace @maw/shared && npm run typecheck --workspace @maw/server && npm run typecheck --workspace @maw/web",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}

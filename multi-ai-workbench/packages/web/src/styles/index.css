@@ -1,0 +1,161 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------- 设计令牌 */
+@theme {
+  --font-sans: Inter, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', ui-sans-serif, system-ui, sans-serif;
+  --radius-card: 12px;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* 深色底 + 三处品牌色光晕，营造玻璃拟态需要的"背后有光" */
+  background:
+    radial-gradient(1200px 620px at 10% -12%, rgba(91, 124, 250, 0.2), transparent 62%),
+    radial-gradient(900px 520px at 90% -4%, rgba(167, 139, 250, 0.16), transparent 58%),
+    radial-gradient(900px 560px at 50% 112%, rgba(18, 181, 201, 0.14), transparent 62%),
+    #08090f;
+  color: #e8eaf6;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ------------------------------------------------------------- 玻璃拟态基础 */
+.glass {
+  background: rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-strong {
+  background: rgba(16, 18, 30, 0.74);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.glass-hover:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* 卡片圆角统一 12px（任务书 UI 规范） */
+.card {
+  border-radius: var(--radius-card);
+}
+
+/* --------------------------------------------------------------- 滚动条 */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+}
+.scroll-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* --------------------------------------------------------------- 动效 */
+@keyframes maw-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.12;
+  }
+}
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  vertical-align: -2px;
+  margin-left: 2px;
+  border-radius: 2px;
+  background: var(--brand, #8b5cf6);
+  animation: maw-caret 1s steps(1) infinite;
+}
+
+@keyframes maw-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.fade-up {
+  animation: maw-fade-up 0.22s ease-out both;
+}
+
+@keyframes maw-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+.pulse {
+  animation: maw-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes maw-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.16) 50%, rgba(255, 255, 255, 0.05) 100%);
+  background-size: 200% 100%;
+  animation: maw-shimmer 1.4s linear infinite;
+}
+
+/* 尊重系统"减少动态效果"设置 */
+@media (prefers-reduced-motion: reduce) {
+  .caret,
+  .fade-up,
+  .pulse,
+  .shimmer {
+    animation: none;
+  }
+}
+
+/* 品牌色变量注入点：由 ProviderPane 通过内联 style 提供 */
+.brand-text {
+  color: var(--brand, #e8eaf6);
+}
+.brand-border {
+  border-color: color-mix(in srgb, var(--brand, #888) 45%, transparent);
+}
+.brand-dot {
+  background: var(--brand, #888);
+}
