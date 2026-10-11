@@ -71,6 +71,40 @@ npm run dev          # 并行启动 server(8787) + web(5173)
 > `npm run dev` 默认走 **单端口代理**模式：浏览器只连 `5173`，Vite 把 `/api`、`/uploads`、`/ws` 反代到 `8787`。
 > 生产形态下 server 会直接托管 `packages/web/dist`，只暴露 `8787` 一个端口。
 
+### 一键启动（Windows，双击 exe）
+
+电脑重启后不想再开终端敲命令的话，直接双击项目根目录里的：
+
+```
+multi-ai-workbench\启动工作台.exe
+```
+
+它会自己按顺序做完这几件事：检查 Node → 缺依赖就 `npm install` → 缺前端产物就 `npm run build` → 启动后端 → 探到服务就绪后自动打开浏览器（`http://127.0.0.1:8877`）。
+**关掉这个小窗口 = 停掉服务**，不会留后台进程占着端口。
+
+窗口上四个按钮：
+
+| 按钮 | 什么时候用 |
+|---|---|
+| `打开工作台` | 浏览器不小心关了，再开一次页面 |
+| `重启服务` | 改过代码，或端口被别的程序占了想重来 |
+| `打开日志` | 直接打开 `logs/` 目录 |
+| `停止并退出` | 等同于关窗口：停服务 + 退出 |
+
+服务端和构建过程的全部输出都写进 `logs\launcher.log`，**出问题先看它**。
+
+> 这个 exe 只有 20 多 KB：它**不打包应用**，只是把上面那几条命令按顺序替你敲一遍，因此依赖项目自带的 `node_modules` 和本机 Node（需要 >= 20.11）。
+> 换台机器或重新克隆仓库后直接双击也能跑，第一次会自动装依赖 + 构建前端，需要联网。
+
+改了 `tools/launcher/Launcher.cs` 之后要重新编译 exe：
+
+```powershell
+cd multi-ai-workbench
+powershell -ExecutionPolicy Bypass -File tools\launcher\build.ps1
+```
+
+只用到 Windows 自带的 `csc.exe`（.NET Framework 4.x），**不需要装 .NET SDK / Visual Studio**；图标由 `tools\launcher\make-icon.mjs` 生成。
+
 ### 可用脚本（都在 `multi-ai-workbench/` 下执行）
 
 | 命令 | 作用 |
@@ -414,6 +448,8 @@ npm run e2e -- --providers deepseek,kimi "只发两家"
 
 | 现象 | 处理 |
 |---|---|
+| Windows：双击 `启动工作台.exe` 窗口一闪而过 / 没反应 | 看 `logs\launcher.log`。最常见两种：没装 Node（exe 会在界面上直接提示），或 exe 被挪到了别处（它必须和 `package.json` 待在同一层目录） |
+| Windows：exe 一直卡在「正在启动后端服务…」 | 端口被占或启动报错，看 `logs\launcher.log` 末尾，或点界面上的「重启服务」 |
 | PowerShell 里 `npm` 报"无法加载文件 …npm.ps1" | 执行策略拦截，改用 `npm.cmd` |
 | 端口被占用 | 改 `.env` 的 `PORT`；Vite 侧若 5173 被占会自动 +1（`strictPort: false`），看启动日志里的实际地址 |
 | 页面能开但消息没反应 | 看浏览器控制台有没有 WebSocket 连接报错；再确认 `8787` 是否活着（`GET /api/health`） |
