@@ -1,0 +1,14 @@
+{
+  "ready": "div.chat-input-editor, div[role='textbox'], [contenteditable='true']",
+  "loggedIn": "div.chat-input-editor, div[role='textbox']",
+  "loggedOut": "[class*='login-btn'], [class*='login-button'], [class*='login-panel'], [class*='login']",
+  "input": "div.chat-input-editor, div[role='textbox'], [contenteditable='true']",
+  "sendButton": "div[class*='send-button'], [class*='send-button'], [aria-label*='发送']",
+  "stopButton": "[aria-label*='停止'], div[class*='stop']",
+  "assistantMessage": "div[class*='markdown'], div[class*='segment-assistant'], [class*='assistant']",
+  "userMessage": "div[class*='segment-user'], [class*='user-content']",
+  "newChat": "[class*='new-chat'], [aria-label*='新建']",
+  "fileInput": "input[type='file'], input.hidden-input",
+  "blocked": "iframe[src*='captcha'], [class*='captcha']",
+  "notes": "已用 2026-10-12 实测校准：输入框是 div.chat-input-editor（role=textbox），发送按钮 class 含 send-button，上传用 input.hidden-input。同豆包，登录判定偏保守，可用「我已登录」手动确认。"
+}

@@ -2,6 +2,8 @@
 import type {
   AdapterRoute,
   HealthResponse,
+  LoginState,
+  LoginStatusResponse,
   Provider,
   ProviderStatus,
   Reply,
@@ -57,4 +59,11 @@ export const api = {
   vote: (replyId: string, vote: VoteValue) => post<Reply>(`/api/replies/${replyId}/vote`, { vote }),
 
   exportUrl: (sessionId: string, format: 'md' | 'json') => `/api/export/${sessionId}?format=${format}`,
+
+  // -------- 登录（Playwright 通道）--------
+  loginStatus: () => request<LoginStatusResponse>('/api/login/status'),
+  startLogin: (providers?: Provider[]) => post<{ ok: boolean; providers: LoginState[] }>('/api/login', { providers }),
+  cancelLogin: (providers?: Provider[]) => post<{ ok: boolean; providers: LoginState[] }>('/api/login/cancel', { providers }),
+  confirmLogin: (provider: Provider) => post<{ ok: boolean; provider: LoginState }>('/api/login/confirm', { provider }),
+  exportLoginState: (provider: Provider) => post<{ ok: boolean; file: string }>('/api/login/export', { provider }),
 };

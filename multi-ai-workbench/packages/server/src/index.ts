@@ -10,6 +10,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyError } from 'fastify';
 import { AdapterRegistry } from './adapters/registry.js';
+import { BrowserPool } from './browser/browser-pool.js';
+import { LoginService } from './browser/login-service.js';
 import { config } from './config.js';
 import { EventBus } from './core/event-bus.js';
 import { ImageStore } from './core/image-store.js';
@@ -31,6 +33,11 @@ async function main(): Promise<void> {
 
   const bus = new EventBus();
   const imageStore = new ImageStore(config.uploadDir);
+
+  // Playwright 浏览器池：完全懒启动——只有真正用到 playwright 通道、
+  // 或者你点了界面上的「登录」，才会去开浏览器。纯 mock 模式下不占任何资源。
+  const browserPool = new BrowserPool(createLogger('browser'));
+  const loginService = new LoginService({ pool: browserPool, log: createLogger('login') });
   const registry = new AdapterRegistry(config.routes, config.mockSpeed, createLogger('adapter'));
   await registry.initAll();
 
@@ -73,6 +80,8 @@ async function main(): Promise<void> {
     bus,
     log: createLogger('http'),
     startedAt,
+    pool: browserPool,
+    login: loginService,
   });
 
   // 若前端已构建（packages/web/dist 存在），顺手挂到根路径：
@@ -109,6 +118,11 @@ async function main(): Promise<void> {
   log.info(`数据目录 ${config.storageDir}`);
   log.info(`执行通道 ${routeSummary}`);
   log.info(`WebSocket ws://${config.host}:${config.port}/ws`);
+  log.info(
+    config.browser.headless
+      ? '浏览器模式 headless（无法扫码登录；需要登录时把 BROWSER_HEADLESS 设为 false）'
+      : '浏览器模式 headed（点界面上的「登录」即可弹出窗口扫码）',
+  );
 
   // ---------- 优雅退出 ----------
   let closing = false;
@@ -119,6 +133,7 @@ async function main(): Promise<void> {
     orchestrator.abortAll();
     hub.closeAll();
     await registry.disposeAll();
+    await browserPool.closeAll();
     await app.close().catch(() => undefined);
     store.close();
     process.exit(0);

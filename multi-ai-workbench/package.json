@@ -16,6 +16,14 @@
     "dev:web": "npm run dev --workspace @maw/web",
     "build": "npm run build --workspace @maw/web",
     "typecheck": "npm run typecheck --workspace @maw/shared && npm run typecheck --workspace @maw/server && npm run typecheck --workspace @maw/web",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "login": "tsx scripts/login.ts",
+    "login:deepseek": "tsx scripts/login.ts deepseek",
+    "login:doubao": "tsx scripts/login.ts doubao",
+    "login:kimi": "tsx scripts/login.ts kimi",
+    "probe": "tsx scripts/probe.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
   }
 }

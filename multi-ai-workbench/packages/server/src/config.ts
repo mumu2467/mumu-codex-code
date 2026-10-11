@@ -22,6 +22,15 @@ if (fs.existsSync(envFile)) {
 
 const routeEnum = z.enum(['mock', 'playwright', 'api']);
 
+/**
+ * 只认 "1"/"true" 为真。
+ * 注意不能直接用 z.coerce.boolean()：它底层是 Boolean(value)，字符串 "false" 会被判成 true。
+ */
+const boolString = z
+  .enum(['1', '0', 'true', 'false', 'TRUE', 'FALSE', 'True', 'False'])
+  .default('false')
+  .transform((value) => value === '1' || value.toLowerCase() === 'true');
+
 const EnvSchema = z.object({
   HOST: z.string().default('127.0.0.1'),
   PORT: z.coerce.number().int().positive().max(65535).default(8787),
@@ -32,6 +41,16 @@ const EnvSchema = z.object({
   ADAPTER_DEEPSEEK: routeEnum.default('mock'),
   ADAPTER_DOUBAO: routeEnum.default('mock'),
   ADAPTER_KIMI: routeEnum.default('mock'),
+
+  // ---------- Playwright 浏览器通道 ----------
+  /** 是否无头运行。默认 false：打开真实窗口，扫码登录 / 人工过验证码都靠它 */
+  BROWSER_HEADLESS: boolString,
+  /** 浏览器内核：留空用 Playwright 自带 Chromium；也可填 "chrome"（复用本机已装 Chrome，更接近真人环境） */
+  BROWSER_CHANNEL: z.string().optional(),
+  /** 每个动作后额外等待的毫秒数，调试选择器时有用 */
+  BROWSER_SLOWMO: z.coerce.number().int().min(0).default(0),
+  /** 等待人工完成登录的超时（毫秒） */
+  LOGIN_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -68,8 +87,22 @@ export const config = {
     doubao: env.ADAPTER_DOUBAO,
     kimi: env.ADAPTER_KIMI,
   },
+  /** Playwright 浏览器通道 */
+  browser: {
+    headless: env.BROWSER_HEADLESS,
+    channel: env.BROWSER_CHANNEL?.trim() ? env.BROWSER_CHANNEL.trim() : undefined,
+    slowMo: env.BROWSER_SLOWMO,
+    /** 每个 provider 一个持久化 user-data-dir（Chromium 自己管 cookie / IndexedDB） */
+    profileRoot: path.join(storageDir, '.browser-profile'),
+    /** storageState 导出目录（备份 / 迁移到 Docker 卷用） */
+    stateDir: path.join(storageDir, 'browser'),
+  },
+  /** 等待人工登录的超时 */
+  loginTimeoutMs: env.LOGIN_TIMEOUT_MS,
 } as const;
 
 export type AppConfig = typeof config;
 
 fs.mkdirSync(config.uploadDir, { recursive: true });
+// storageState 备份目录先建好；profileRoot 交给 Chromium 自己按需创建
+fs.mkdirSync(config.browser.stateDir, { recursive: true });

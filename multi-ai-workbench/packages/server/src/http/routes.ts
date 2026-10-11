@@ -10,6 +10,8 @@ import type { EventBus } from '../core/event-bus.js';
 import type { ImageStore } from '../core/image-store.js';
 import type { SessionStore } from '../core/session-store.js';
 import type { AdapterRegistry } from '../adapters/registry.js';
+import type { BrowserPool } from '../browser/browser-pool.js';
+import type { LoginService } from '../browser/login-service.js';
 import { config } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 
@@ -21,6 +23,10 @@ export interface RouteDeps {
   bus: EventBus;
   log: Logger;
   startedAt: number;
+  /** Playwright 浏览器池（登录窗口、profile 状态都走它） */
+  pool: BrowserPool;
+  /** 人工扫码登录服务 */
+  login: LoginService;
 }
 
 const SendBody = z.object({
@@ -36,7 +42,7 @@ const VoteBody = z.object({
 });
 
 export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Promise<void> {
-  const { store, orchestrator, registry, imageStore, bus, log, startedAt } = deps;
+  const { store, orchestrator, registry, imageStore, bus, log, startedAt, pool, login } = deps;
 
   // ---------------------------------------------------------------- 健康检查
 
@@ -62,6 +68,69 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
         })),
       ),
   );
+
+  // ------------------------------------------------------------- 登录（Playwright 通道）
+
+  /** 登录进度 + 浏览器 profile 概览 */
+  app.get('/api/login/status', async () => ({
+    ok: true,
+    headless: config.browser.headless,
+    profileRoot: config.browser.profileRoot,
+    stateDir: config.browser.stateDir,
+    providers: login.status(),
+    profiles: pool.status(),
+  }));
+
+  /**
+   * 打开指定 provider 的真实浏览器窗口，等你在窗口里扫码登录。
+   * 立即返回，前端随后轮询 /api/login/status 看进度。
+   */
+  app.post('/api/login', async (request, reply) => {
+    const body = z.object({ providers: z.array(z.string()).optional() }).safeParse(request.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: '请求体不合法：providers 应为字符串数组' });
+    if (config.browser.headless) {
+      return reply.code(409).send({
+        error:
+          '当前是 headless 模式，浏览器不会显示窗口，没法扫码登录。' +
+          '请把 .env 里的 BROWSER_HEADLESS 设为 false 后重启服务。',
+      });
+    }
+    const providers = normalizeProviders(body.data.providers);
+    log.info(`发起登录：${providers.join('、')}`);
+    return { ok: true, providers: await login.start(providers) };
+  });
+
+  /** 手动确认已登录：跳过自动检测，直接保存当前登录态（选择器不准时的兜底） */
+  app.post('/api/login/confirm', async (request, reply) => {
+    const body = z.object({ provider: z.string() }).safeParse(request.body ?? {});
+    if (!body.success || !isProvider(body.data.provider)) {
+      return reply.code(400).send({ error: '请求体不合法：provider 必填，且需为 deepseek / doubao / kimi' });
+    }
+    return { ok: true, provider: await login.confirm(body.data.provider) };
+  });
+
+  /** 停止轮询登录状态（窗口保持打开，可继续手动登录） */
+  app.post('/api/login/cancel', async (request, reply) => {
+    const body = z.object({ providers: z.array(z.string()).optional() }).safeParse(request.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: '请求体不合法：providers 应为字符串数组' });
+    return { ok: true, providers: login.cancel(normalizeProviders(body.data.providers)) };
+  });
+
+  /**
+   * 导出某家当前的 storageState（登录态备份）。
+   * 应用内登录时 profile 本身就持久化了，这个接口主要用于把登录态拷到别处。
+   */
+  app.post('/api/login/export', async (request, reply) => {
+    const body = z.object({ provider: z.string() }).safeParse(request.body ?? {});
+    if (!body.success || !isProvider(body.data.provider)) {
+      return reply.code(400).send({ error: '请求体不合法：provider 必填，且需为 deepseek / doubao / kimi' });
+    }
+    try {
+      return { ok: true, file: await pool.saveState(body.data.provider) };
+    } catch (err) {
+      return reply.code(409).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 
   /** 运行时热切换执行通道（mock → playwright / api） */
   app.post('/api/providers/route', async (request, reply) => {

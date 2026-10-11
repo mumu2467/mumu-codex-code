@@ -1,11 +1,13 @@
 /** 顶栏：品牌 + 全局 AI 开关 + 会话切换 + 连接状态 */
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import type { Provider } from '@maw/shared';
 import { PROVIDERS, PROVIDER_META } from '@maw/shared';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
+import { LoginPanel } from './LoginPanel';
 
 export function TopBar() {
+  const [loginOpen, setLoginOpen] = useState(false);
   const wsStatus = useAppStore((s) => s.wsStatus);
   const enabled = useAppStore((s) => s.enabled);
   const toggleProvider = useAppStore((s) => s.toggleProvider);
@@ -71,6 +73,24 @@ export function TopBar() {
           <div className="flex items-center gap-1.5 rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11.5px]">
             <span className={`h-1.5 w-1.5 rounded-full ${wsStatus !== 'open' ? 'pulse' : ''}`} style={{ background: connection.color }} />
             <span className="text-slate-400">{connection.text}</span>
+          </div>
+
+          {/* 登录：给三家开真实浏览器窗口，扫码登录（Playwright 通道） */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setLoginOpen((open) => !open)}
+              aria-expanded={loginOpen}
+              className={`rounded-full border px-2.5 py-1 text-[11.5px] transition ${
+                loginOpen
+                  ? 'border-[#5B7CFA]/60 bg-[#5B7CFA]/20 text-white'
+                  : 'border-white/8 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+              title="打开三家网页版的登录窗口（扫码登录，登录态会被持久化）"
+            >
+              🔑 登录三家
+            </button>
+            {loginOpen ? <LoginPanel onClose={() => setLoginOpen(false)} /> : null}
           </div>
 
           <select

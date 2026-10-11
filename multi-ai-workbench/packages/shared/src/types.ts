@@ -182,3 +182,66 @@ export const ERROR_KIND_LABEL: Record<ErrorKind, string> = {
   network: '网络/限流',
   unknown: '未知错误',
 };
+// ---------------------------------------------------------------- 登录（Playwright 通道）
+
+/** 登录流程的阶段 */
+export type LoginPhase =
+  | 'idle'
+  | 'opening'
+  | 'waiting'
+  | 'saving'
+  | 'detected'
+  | 'done'
+  | 'timeout'
+  | 'error'
+  | 'cancelled';
+
+export const LOGIN_PHASE_LABEL: Record<LoginPhase, string> = {
+  idle: '未开始',
+  opening: '正在打开窗口',
+  waiting: '等待登录',
+  saving: '保存登录态',
+  detected: '疑似已登录',
+  done: '已登录',
+  timeout: '等待超时',
+  error: '失败',
+  cancelled: '已取消',
+};
+
+/** 某一家当前这一轮登录的进度 */
+export interface LoginState {
+  provider: Provider;
+  label: string;
+  phase: LoginPhase;
+  /** 当前窗口地址 */
+  url?: string;
+  /** 面向用户的中文提示 */
+  message: string;
+  /** 从本轮开始等待至今的毫秒数 */
+  elapsedMs: number;
+  updatedAt: number;
+}
+
+/** 某一家浏览器 profile 的落盘情况 */
+export interface BrowserProfileStatus {
+  provider: Provider;
+  label: string;
+  url: string;
+  /** 本地是否已有 profile（说明至少打开过一次） */
+  hasProfile: boolean;
+  /** 是否已导出 storageState 备份 */
+  hasStateFile: boolean;
+  /** 此刻是否有窗口开着 */
+  windowOpen: boolean;
+}
+
+/** GET /api/login/status 的响应体 */
+export interface LoginStatusResponse {
+  ok: boolean;
+  /** 是否无头模式（无头模式下无法弹窗扫码） */
+  headless: boolean;
+  profileRoot: string;
+  stateDir: string;
+  providers: LoginState[];
+  profiles: BrowserProfileStatus[];
+}

@@ -36,8 +36,9 @@
 | 设计 | 方案选型 / 架构 / 数据流 / 接口契约 | ✅ `docs/01-方案选型与架构设计.md` |
 | **Step 1** | monorepo 脚手架 + 后端编排 + SQLite + WebSocket + `ChatAdapter` + Mock 全链路 | ✅ 已交付 |
 | **Step 2** | 前端三窗并发页（响应式、图片混合发送、独立控制、指标） | ✅ 已交付 |
-| Step 3 | Playwright 基础层 + 登录态持久化 + DeepSeek 真机通道 | ⏳ 下一步 |
-| Step 4 | 豆包 / Kimi 真机通道 | ⏳ |
+| **Step 3a** | 浏览器池 + 三家登录态持久化（弹**真实浏览器窗口**扫码登录，已实测通） | ✅ 已交付 |
+| Step 3b | 网页版「投递 → 收流」适配器（真正把消息发到 C 端并抓回复） | ⏳ 下一步 |
+| Step 4 | 豆包 / Kimi 真机通道（复用 3b 的通用引擎 + 各自选择器） | ⏳ |
 | Step 5 | 聚合对话页（切换 / 并排 / 投票 / 导出 / 会话侧边栏） | ⏳ |
 | Step 6 | 画面流（CDP screencast，默认关）+ 人工介入 + `docker-compose.yml` | ⏳ |
 | Step 7 | 官方 API 兜底适配器 | ⏳ |
@@ -78,6 +79,10 @@ npm run dev          # 并行启动 server(8787) + web(5173)
 | `npm run build` | 构建前端到 `packages/web/dist` |
 | `npm run typecheck` | 三个包统一类型检查（shared → server → web） |
 | `npm run smoke` | 端到端冒烟测试：自带服务端生命周期，26 项断言 |
+| `npm run login` | **弹出三家真实浏览器窗口**，你扫码登录，登录态自动落盘 |
+| `npm run login -- deepseek` | 只登录某一家（`deepseek` / `doubao` / `kimi`） |
+| `npm run login -- --keep-open` | 登录完成后不关窗口 |
+| `npm run probe -- deepseek --deep` | 选择器探针：把候选选择器在真实页面上的命中情况 + 结构快照打出来 |
 
 `npm run smoke` 是最快的验收方式，覆盖：并发投递、流式增量、图片落盘 + 静态访问、错误注入 + 一键重试、停止保留半截内容、Markdown / JSON 导出。
 
@@ -92,7 +97,9 @@ multi-ai-workbench/
 ├─ .env.example                 # 环境变量模板（复制为 .env）
 ├─ scripts/
 │  ├─ dev.mjs                   # 并行拉起 server + web（原生 child_process，无额外依赖）
-│  └─ smoke.mjs                 # 端到端冒烟测试（自带服务端生命周期）
+│  ├─ smoke.mjs                 # 端到端冒烟测试（自带服务端生命周期）
+│  ├─ login.ts                  # 命令行登录：弹三家真实窗口，扫码后落盘登录态
+│  └─ probe.ts                  # 选择器探针：校准 selectors/*.json
 ├─ docs/01-方案选型与架构设计.md  # 选型结论 / 架构 / 数据流 / 降级阶梯
 ├─ storage/                     # 运行时产物（git 忽略）：app.db、uploads/
 └─ packages/
@@ -102,6 +109,9 @@ multi-ai-workbench/
    │  └─ src/
    │     ├─ config.ts           # 环境变量集中解析（zod 校验，错就启动失败）
    │     ├─ index.ts            # 组装：存储 → 适配器注册表 → 编排器 → 路由 / WS
+   │     ├─ browser/            # ★ Playwright 基础设施
+   │     │  ├─ browser-pool.ts      # 每 provider 一个持久化 BrowserContext（懒启动 + 内核自动探测）
+   │     │  └─ login-service.ts     # 开窗口 → 等扫码 → 判定登录 → 导出 storageState
    │     ├─ core/
    │     │  ├─ orchestrator.ts  # 并发投递、流式聚合、停止/重试、指标统计
    │     │  ├─ session-store.ts # SQLite 持久化（会话 / 消息 / 回复）
@@ -110,6 +120,11 @@ multi-ai-workbench/
    │     ├─ adapters/
    │     │  ├─ types.ts         # ★ ChatAdapter 契约（新接一家 AI 只需实现它）
    │     │  ├─ registry.ts      # 按 provider 解析通道 + 运行时热切换 + 会话键
+   │     │  ├─ selectors/       # ★ 三家网页版的选择器（外置 JSON + zod 校验）
+   │     │  │  ├─ index.ts          # 加载器（带缓存 / 可热重载）
+   │     │  │  ├─ deepseek.json
+   │     │  │  ├─ doubao.json
+   │     │  │  └─ kimi.json
    │     │  └─ mock-adapter.ts  # Mock 通道（本地假数据，支持故障注入）
    │     ├─ http/routes.ts      # REST 接口
    │     └─ ws/hub.ts           # WebSocket 连接管理 + 会话订阅 + 广播
@@ -140,6 +155,12 @@ multi-ai-workbench/
 | `ADAPTER_DOUBAO` | `mock` | 同上 |
 | `ADAPTER_KIMI` | `mock` | 同上 |
 | `MOCK_SPEED` | `1` | Mock 通道语速倍率，调大更快 |
+| `BROWSER_HEADLESS` | `false` | 是否无头。**默认 false**：要弹真实窗口才能扫码 / 过验证码 |
+| `BROWSER_CHANNEL` | 空 | 浏览器内核。留空=自动探测（Playwright 自带 Chromium → 本机 Edge / Chrome）；也可填 `chrome` / `msedge` |
+| `BROWSER_SLOWMO` | `0` | 每个动作后额外等待毫秒数，调试选择器时很好用 |
+| `LOGIN_TIMEOUT_MS` | `300000` | 等待人工登录的超时 |
+| `MAW_SERVER_PORT` | `8787` | 仅前端用：Vite 反代到哪个后端端口（同机跑多个项目时改它） |
+| `MAW_WEB_PORT` | `5173` | 仅前端用：Vite 自己监听的端口 |
 | `DEEPSEEK_API_KEY` | 空 | 路线 B，Step 7 用 |
 | `ARK_API_KEY` | 空 | 火山方舟（豆包），Step 7 用 |
 | `MOONSHOT_API_KEY` | 空 | Moonshot（Kimi），Step 7 用 |
@@ -176,6 +197,11 @@ POST /api/providers/route
 | `POST` | `/api/replies/:id/vote` | 点赞 / 采纳为最佳答案 |
 | `POST` | `/api/upload` | 图片上传（multipart），返回 `/uploads/...` URL |
 | `GET` | `/api/export/:sessionId?format=md\|json` | 导出会话 |
+| `GET` | `/api/login/status` | 登录进度 + 各家浏览器 profile 概览 |
+| `POST` | `/api/login` | **打开真实浏览器窗口**登录：`{ providers?: [] }`，立即返回，之后轮询 status |
+| `POST` | `/api/login/confirm` | 手动确认已登录并落盘：`{ provider }`（选择器不准时的兜底） |
+| `POST` | `/api/login/cancel` | 停止轮询登录状态（窗口保持打开） |
+| `POST` | `/api/login/export` | 导出某家 storageState 备份：`{ provider }` |
 
 `POST /api/send` 会**顺带返回已创建的用户消息**，这样前端不必再拉一次全量会话——否则"重拉"可能覆盖已经在 WebSocket 上流过来的增量内容。图片支持三种来源：前端压缩后的 base64 data URL、`/uploads/...` URL、或先走 `/api/upload` 再传 URL。
 
@@ -223,22 +249,70 @@ POST /api/providers/route
 
 - `storage/app.db` —— SQLite（`node:sqlite`，WAL 模式），存会话 / 消息 / 回复 / 投票。
 - `storage/uploads/<YYYY-MM-DD>/img_xxx.png` —— 上传的图片；数据库里只存 `/uploads/...` 这种 URL，静态资源由后端托管。
-- `storage/browser/` —— **Step 3 起**放三家网页版的 `storageState`（登录态）。
+- `storage/.browser-profile/<provider>/` —— 三家的 **Chromium 持久化 profile**（主登录态，cookie / localStorage / IndexedDB 都在里面）。
+- `storage/browser/<provider>.json` —— 三家的 `storageState` 快照（便携备份，可拷到别的机器 / Docker 卷）。
+- `storage/probe/<provider>.json` —— `npm run probe -- --deep` 生成的页面结构快照，用来校准选择器。
 
 **图片处理链路**：前端 canvas 压缩（长边 ≤ 1568、webp 质量 0.82）→ base64 data URL 预览 → 随消息发给后端 → 后端落盘 → DB 只存 URL。这样既避免大图撑爆请求体，也避免把 base64 塞进数据库。
 
 ---
 
-## 九、登录态怎么保存与刷新（Step 3）
+## 九、登录三家网页版（扫码登录怎么做的）
 
-> 这三家网页版都需要登录，且都有风控。Step 3 会交付 `scripts/login.ts`：**弹出真实浏览器窗口**，你手动完成登录（含验证码），脚本把 `storageState`（cookie + localStorage）落盘到 `storage/browser/<provider>.json`，之后所有自动请求复用这份登录态。
+### 为什么是"真实浏览器窗口"
 
-要点与注意事项：
+三家 C 端都有 `X-Frame-Options` / CSP，iframe 嵌不进来；就算硬绕，同源策略也让你**读不到 iframe 里的 DOM**。所以唯一的正路是：**后端用 Playwright 开真实窗口**（你看到的就是原版页面，扫码 / 滑块 / 短信验证码全都能用），后端再复用这份登录态去投递和收流。
 
-- **登录态会过期**。失效时后端发 `auth.required` 事件，前端弹窗提示你重新跑一次 `scripts/login.ts`，而不是让请求静默失败。
-- **可能触发验证码 / 滑块**。这类无法自动绕过，脚本会给出手动接管的入口（headed 模式 + `scripts/probe.ts` 探针），必要时降级到 Step 7 的官方 API。
-- **不要提交 `storage/`**。`storageState` 里含 cookie / session token，入库等于泄露凭据。仓库根 `.gitignore` 已忽略 `**/.browser-profile/`，本项目 `.gitignore` 额外忽略 `storage/`。
-- **不要高频、并发地跑自动请求**。容易被风控也容易触发限流；适配层会对同一 provider 串行化（同一时刻只跑一条），并对失败做分类与退避。
+### 两种登录方式
+
+**方式一：在应用里点「登录三家」（推荐）**
+
+右上角「🔑 登录三家」→ 面板里点「打开三家的登录窗口」→ 三个真实窗口弹出 → 用 App 扫码（或手机号+验证码）→ 面板里每家的状态点会自动变绿。
+
+**方式二：命令行**
+
+```bash
+npm run login                 # 三家一起
+npm run login -- deepseek     # 只登一家
+npm run login -- --keep-open  # 登完不关窗口
+```
+
+> ⚠️ 同一个 profile 同一时刻只能被一个进程占用。**服务在跑时请用方式一**；方式二适合服务没起、或者你在 Docker/服务器上单独刷登录态。
+
+### 登录态存在哪、怎么刷新
+
+| 位置 | 内容 | 说明 |
+|---|---|---|
+| `storage/.browser-profile/<provider>/` | Chromium 持久化 profile | **主存储**。cookie / localStorage / IndexedDB 全在里面，重启自动复用，不用重复扫码 |
+| `storage/browser/<provider>.json` | `storageState` 快照 | 便携备份，可拷贝到别的机器 / Docker 卷 |
+
+**登录失效了怎么办**：后端会推 `auth.required` 事件，界面弹提示，重新点一次「登录三家」即可 —— 不会静默失败。
+
+### 判定逻辑（这里踩过坑，说明一下）
+
+后端**不会**只看一眼选择器就宣布"登录成功"，而是要求同时满足：
+
+1. 出现过"未登录"形态（登录页 URL，或页面上还看得到登录入口）；
+2. 之后连续 3 次轮询都处于登录态（约 4.5 秒）。
+
+如果 profile 里本来就有登录态（页面从头到尾不显示登录页），要求连续 **6** 次稳定（约 9 秒）才算数。
+
+> 为什么要这么绕：SPA 是分批渲染的，输入框往往先出来、登录按钮后出来，中间那一两秒"看着像已登录"，实测就会误判。真拿不准时，面板里的**「我已登录」**按钮可以跳过自动检测直接落盘。
+
+### 平台限制，以及对应的降级方案
+
+| 限制 | 表现 | 降级方案 |
+|---|---|---|
+| 新设备 / 异地登录风控 | 要求短信验证码或 App 扫码 | 只能人工过；窗口就是给你干这个的 |
+| 图形验证码 / 滑块 | 发送或登录时弹出 | 同上，人工过一次即可；`blocked` 选择器命中时界面会提示 |
+| 页面改版导致选择器失效 | 卡在"等待登录"或抓不到回复 | `npm run probe -- <provider> --deep` 打印真实 DOM 快照，照着改 `selectors/*.json`；改完不用重启服务 |
+| 高频请求触发限流 | 回复变慢 / 报错 | 同一 provider 串行化（一次只跑一条），失败按 `kind` 分类并提示；必要时切到 Step 7 的官方 API |
+| 平台明确禁止自动化 | 账号可能被限制 | 这是路线 A 的固有风险。正式生产建议走**路线 B（官方 API）**，把 Playwright 通道当兜底 |
+
+### 安全提醒
+
+- **不要提交 `storage/`**。里面是 cookie / session token，入库等于泄露凭据。仓库根 `.gitignore` 已忽略 `**/.browser-profile/`，本项目 `.gitignore` 额外忽略整个 `storage/`。
+- `.env` 同样不要入库（含 API Key）。
 
 ---
 
@@ -252,6 +326,11 @@ POST /api/providers/route
 | 引用了内置 `node:sqlite` 但启动报错 | Node 版本太低，需 >= 20.11（推荐 22/24） |
 | 想清空全部数据重来 | 停掉服务，删掉 `storage/` 目录再启动 |
 | `npm install` 时提示 esbuild 等 postinstall 待批准 | 正常，`tsx` / `vite` 无需该脚本即可运行 |
+| `EADDRINUSE 8787` | 端口被别的项目占了。改 `PORT`（后端）+ `MAW_SERVER_PORT`（前端反代）即可，例如都用 `8877` |
+| 点「登录三家」没反应 / 报 409 | 说明当前是 headless 模式。把 `BROWSER_HEADLESS` 设为 `false` 再重启 |
+| `Executable doesn't exist` | Playwright 自带 Chromium 没装。执行 `npx playwright install chromium`，或把 `BROWSER_CHANNEL` 设为 `msedge` / `chrome` 直接复用本机浏览器 |
+| 窗口开了但一直「等待登录」 | 选择器可能失效：先点「我已登录」手动落盘；再用 `npm run probe -- <provider> --deep` 校准 `selectors/*.json` |
+| profile 被占用 | 同一个 profile 只能被一个进程用。关掉命令行登录脚本，或先停服务 |
 
 ---
 

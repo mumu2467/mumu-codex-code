@@ -1,0 +1,15 @@
+{
+  "ready": "input.ds-input__input, input[type='tel'], textarea#chat-input, textarea",
+  "loggedIn": "textarea#chat-input, textarea",
+  "loggedOut": "input.ds-input__input, input[type='tel'], input[placeholder*='手机号']",
+  "loggedOutUrl": "sign_in|/login",
+  "input": "textarea#chat-input, textarea",
+  "sendButton": "div[role='button'][aria-disabled='false'], button[type='submit'], [class*='send']",
+  "stopButton": "[aria-label*='停止'], [class*='stop']",
+  "assistantMessage": "div.ds-markdown, div[class*='ds-markdown'], div[class*='markdown']",
+  "userMessage": "div[class*='fbb737a4'], div[class*='user-message']",
+  "newChat": "[class*='new-chat'], [aria-label*='新建']",
+  "fileInput": "input[type='file']",
+  "blocked": "iframe[src*='captcha'], [class*='captcha']",
+  "notes": "登录页字段已用 2026-10-12 实测校准：未登录会跳 /sign_in，页面只有两个 ds-input__input（手机号 + 验证码），没有 textarea。聊天区字段（sendButton/assistantMessage/userMessage）需登录后再跑 npm run probe -- deepseek --deep 校准。"
+}

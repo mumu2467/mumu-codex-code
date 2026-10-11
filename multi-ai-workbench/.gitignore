@@ -4,5 +4,10 @@ storage/
 .vite/
 *.local
 
+# 本地起服务时的临时日志 / 句柄文件
+*.log
+.srv-*
+.dev-*
+
 # 根 .gitignore 的 `.env.*` 会误伤模板文件，这里显式放行
 !.env.example
