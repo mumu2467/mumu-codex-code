@@ -5,7 +5,9 @@
 import type { AdapterRoute, Provider } from '@maw/shared';
 import { PROVIDERS } from '@maw/shared';
 import { MockAdapter } from './mock-adapter.js';
+import { createWebAdapter } from './web-adapters.js';
 import { unsupportedRoute, type ChatAdapter } from './types.js';
+import type { BrowserPool } from '../browser/browser-pool.js';
 import type { Logger } from '../utils/logger.js';
 
 export class AdapterRegistry {
@@ -18,6 +20,8 @@ export class AdapterRegistry {
     routes: Record<Provider, AdapterRoute>,
     private readonly mockSpeed: number,
     private readonly log: Logger,
+    /** 网页版通道用它拿/建浏览器上下文；纯 mock / api 模式下完全不会被碰到 */
+    private readonly pool: BrowserPool,
   ) {
     this.routes = { ...routes };
   }
@@ -31,22 +35,29 @@ export class AdapterRegistry {
     const entries = await Promise.all(
       PROVIDERS.map(async (provider) => {
         const route = this.routes[provider];
-        if (route !== 'mock') {
-          return [provider, { route, ok: false, reason: unsupportedRoute(provider, route).message }] as const;
+        try {
+          const adapter = await this.resolve(provider);
+          const health = await adapter.health();
+          return [provider, { route, ok: health.ok, reason: health.reason }] as const;
+        } catch (err) {
+          // adapter 创建/体检失败（比如选择器 JSON 不合法）不应该让整个 /api/health 挂掉
+          const reason = err instanceof Error ? err.message : String(err);
+          this.log.warn(`${provider} 通道体检失败：${reason}`);
+          return [provider, { route, ok: false, reason }] as const;
         }
-        const adapter = await this.resolve(provider);
-        const health = await adapter.health();
-        return [provider, { route, ok: health.ok, reason: health.reason }] as const;
       }),
     );
     return Object.fromEntries(entries) as Record<Provider, { route: AdapterRoute; ok: boolean; reason?: string }>;
   }
 
+  /**
+   * 启动时初始化所有通道。
+   * mock / api 是纯本地对象，几乎零成本；playwright 的 init() 也**不会**去开浏览器
+   * （浏览器是懒启动的，只有真正发消息或你点「登录」时才拉起来）。
+   * 所以这里全量 init，让选择器配置错误在启动阶段就暴露出来。
+   */
   async initAll(): Promise<void> {
-    for (const provider of PROVIDERS) {
-      if (this.routes[provider] !== 'mock') continue;
-      await (await this.resolve(provider)).init();
-    }
+    for (const provider of PROVIDERS) await this.resolve(provider); // resolve 内部已经调过 init()
   }
 
   async disposeAll(): Promise<void> {
@@ -73,6 +84,8 @@ export class AdapterRegistry {
         adapter = new MockAdapter(provider, this.mockSpeed);
         break;
       case 'playwright':
+        adapter = createWebAdapter(provider, this.pool, this.log);
+        break;
       case 'api':
         throw unsupportedRoute(provider, route);
       default: {

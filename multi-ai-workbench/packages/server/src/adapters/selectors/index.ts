@@ -27,12 +27,24 @@ const SelectorSchema = z.object({
   loggedOutUrl: z.string().optional(),
   /** 输入框（textarea 或 contenteditable） */
   input: z.string(),
+  /**
+   * 输入框类型：
+   *  - textarea ：直接 fill() 就行（DeepSeek）
+   *  - editable ：contenteditable / ProseMirror，必须用键盘事件喂进去（豆包 / Kimi）
+   * 默认 editable —— 因为它对 textarea 也基本能用（多一层回退而已），反之则不行。
+   */
+  inputKind: z.enum(['textarea', 'editable']).default('editable'),
   /** 发送按钮（可选；没有就靠 Enter 发送） */
   sendButton: z.string().optional(),
   /** 停止生成按钮（可选；有它才能"停止生成"） */
   stopButton: z.string().optional(),
   /** 助手消息容器：取**最后一个**即为当前这条回复 */
   assistantMessage: z.string(),
+  /**
+   * 「正在生成」标志（可选）：命中且可见 = 还在流式输出。
+   * 有它就能一边流式一边放心地判定结束；没有就只能靠"文本静默一段时间"来兜底。
+   */
+  streaming: z.string().optional(),
   /** 用户消息容器：用来确认消息确实发出去了 */
   userMessage: z.string(),
   /** 新建对话按钮（可选） */

@@ -21,7 +21,8 @@
     "login:deepseek": "tsx scripts/login.ts deepseek",
     "login:doubao": "tsx scripts/login.ts doubao",
     "login:kimi": "tsx scripts/login.ts kimi",
-    "probe": "tsx scripts/probe.ts"
+    "probe": "tsx scripts/probe.ts",
+    "e2e": "tsx scripts/e2e-send.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.2"

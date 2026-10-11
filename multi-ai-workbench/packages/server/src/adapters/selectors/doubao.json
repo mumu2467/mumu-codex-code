@@ -1,14 +1,16 @@
 {
-  "ready": "div.ProseMirror, [contenteditable='true'], [data-testid='create_conversation_button']",
+  "ready": "div.ProseMirror, [contenteditable='true']",
   "loggedIn": "div.ProseMirror, [contenteditable='true']",
-  "loggedOut": "[class*='login-panel'], [class*='login-modal'], [class*='login-container'], [class*='login']",
-  "input": "div.ProseMirror, [contenteditable='true']",
+  "loggedOut": "[class*='login-panel'], [class*='login-modal'], [class*='login-container']",
+  "inputKind": "editable",
+  "input": "div.ProseMirror",
   "sendButton": "[data-testid='send-button'], [class*='send-btn'], [class*='send-button']",
-  "stopButton": "[data-testid='stop-button'], [class*='stop-btn'], [aria-label*='停止']",
-  "assistantMessage": "[data-testid='message_text_content'], [class*='markdown']",
-  "userMessage": "[data-testid='send_message'], [class*='user-message']",
-  "newChat": "[data-testid='create_conversation_button'], [aria-label*='新建']",
+  "stopButton": "[data-testid='stop-button'], [class*='stop-btn'], [class*='stop-button']",
+  "streaming": "[data-testid='message_text_content'][data-streaming='true']",
+  "assistantMessage": "[data-testid='receive_message'] [data-testid='message_text_content'], [data-testid='message_text_content']",
+  "userMessage": "[data-testid='send_message']",
+  "newChat": "[data-testid='create_conversation_button']",
   "fileInput": "input[type='file']",
-  "blocked": "[class*='captcha'], [class*='verify']",
-  "notes": "已用 2026-10-12 实测校准：输入框是 TipTap 的 div.ProseMirror（未登录时也在，所以 loggedIn 会误判为真），因此必须靠 loggedOut 判定；如果一直显示'等待登录'但其实已登录，点面板里的「我已登录」手动确认即可。"
+  "blocked": "[class*='captcha'], [class*='verify-']",
+  "notes": "2026-10-12 用 `npm run probe -- doubao --send` + `--dump .v_list_row` 校准：① 输入框是 TipTap 的 div.ProseMirror，只认真实键盘事件（insertText 可以，直接改 textContent 不行）；② 消息行是虚拟列表 div.v_list_row；③ 用户消息 data-testid=send_message，助手消息 data-testid=receive_message，正文是 data-testid=message_text_content；④ 生成中该元素会带 data-streaming=\"true\"，这是最可靠的结束判据；⑤ ProseMirror 在未登录时也在，所以 loggedIn 判定必须靠 loggedOut 兜底。"
 }

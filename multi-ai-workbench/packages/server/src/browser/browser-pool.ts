@@ -223,6 +223,17 @@ export class BrowserPool {
     return pages[pages.length - 1] ?? (await context.newPage());
   }
 
+  /**
+   * 「只看看，别开窗」版 pageFor：浏览器没启动就返回 undefined。
+   * 体检（/api/health）必须用它——否则前端每刷一次页面就会弹出三个浏览器窗口。
+   */
+  peekPage(provider: Provider): Page | undefined {
+    const context = this.contexts.get(provider);
+    if (!context) return undefined;
+    const pages = context.pages().filter((page) => !page.isClosed());
+    return pages[pages.length - 1];
+  }
+
   /** 打开 / 聚焦该 provider 的窗口；只有在尚未导航到站点时才做一次导航 */
   async openWindow(provider: Provider, url = PROVIDER_SITES[provider]): Promise<Page> {
     const page = await this.pageFor(provider);

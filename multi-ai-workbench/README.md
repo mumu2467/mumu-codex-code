@@ -37,13 +37,15 @@
 | **Step 1** | monorepo 脚手架 + 后端编排 + SQLite + WebSocket + `ChatAdapter` + Mock 全链路 | ✅ 已交付 |
 | **Step 2** | 前端三窗并发页（响应式、图片混合发送、独立控制、指标） | ✅ 已交付 |
 | **Step 3a** | 浏览器池 + 三家登录态持久化（弹**真实浏览器窗口**扫码登录，已实测通） | ✅ 已交付 |
-| Step 3b | 网页版「投递 → 收流」适配器（真正把消息发到 C 端并抓回复） | ⏳ 下一步 |
-| Step 4 | 豆包 / Kimi 真机通道（复用 3b 的通用引擎 + 各自选择器） | ⏳ |
+| **Step 3b** | 网页版「投递 → 收流」适配器：**把消息（含图片）真发到三家 C 端并抓流式回复** | ✅ 已交付并实测通 |
+| Step 4 | 多模态与并发打磨（多图 / 长文 / 停止生成校准 / 压测） | ⏳ |
 | Step 5 | 聚合对话页（切换 / 并排 / 投票 / 导出 / 会话侧边栏） | ⏳ |
 | Step 6 | 画面流（CDP screencast，默认关）+ 人工介入 + `docker-compose.yml` | ⏳ |
 | Step 7 | 官方 API 兜底适配器 | ⏳ |
 
-> 现在跑起来，三家走的是 **mock 通道**：不联网、不需要登录，用可复现的假数据把"并发投递 → 流式回显 → 停止 / 重试 / 错误态 → 落库 → 导出"整条链路打通，方便先验收交互。
+> 默认（不写 `.env`）三家走 **mock 通道**：不联网、不需要登录，用可复现的假数据把"并发投递 → 流式回显 → 停止 / 重试 / 错误态 → 落库 → 导出"整条链路打通，方便先验收交互。
+>
+> 想**真的**发到 C 端？把 `.env` 里三家改成 `playwright` 即可驱动真实网页版 —— 见 §十「真实发消息（网页版通道）」。
 
 ---
 
@@ -83,6 +85,9 @@ npm run dev          # 并行启动 server(8787) + web(5173)
 | `npm run login -- deepseek` | 只登录某一家（`deepseek` / `doubao` / `kimi`） |
 | `npm run login -- --keep-open` | 登录完成后不关窗口 |
 | `npm run probe -- deepseek --deep` | 选择器探针：把候选选择器在真实页面上的命中情况 + 结构快照打出来 |
+| `npm run probe -- deepseek --send` | **真发一条消息**给某家并持续跟踪，dump 出回复区的真实 DOM（校准选择器最强手段） |
+| `npm run e2e -- "你的问题"` | 端到端联调：给三家真发一条消息，实时打印 WebSocket 事件流（首字/耗时/token） |
+| `npm run e2e -- --image=p.png "看图说话"` | 同上，但走「文字 + 图片」多模态那条路 |
 
 `npm run smoke` 是最快的验收方式，覆盖：并发投递、流式增量、图片落盘 + 静态访问、错误注入 + 一键重试、停止保留半截内容、Markdown / JSON 导出。
 
@@ -99,7 +104,8 @@ multi-ai-workbench/
 │  ├─ dev.mjs                   # 并行拉起 server + web（原生 child_process，无额外依赖）
 │  ├─ smoke.mjs                 # 端到端冒烟测试（自带服务端生命周期）
 │  ├─ login.ts                  # 命令行登录：弹三家真实窗口，扫码后落盘登录态
-│  └─ probe.ts                  # 选择器探针：校准 selectors/*.json
+│  ├─ e2e-send.ts               # 端到端联调：三家（或指定家）真发一条消息，打印 WS 事件流
+│  └─ probe.ts                  # 选择器探针：校准 selectors/*.json（支持 --send / --dump / --image）
 ├─ docs/01-方案选型与架构设计.md  # 选型结论 / 架构 / 数据流 / 降级阶梯
 ├─ storage/                     # 运行时产物（git 忽略）：app.db、uploads/
 └─ packages/
@@ -125,6 +131,11 @@ multi-ai-workbench/
    │     │  │  ├─ deepseek.json
    │     │  │  ├─ doubao.json
    │     │  │  └─ kimi.json
+   │     │  ├─ base-web-adapter.ts   # ★ 网页版通用引擎（打开→传图→打字→发送→收流→判结束）
+   │     │  ├─ deepseek-adapter.ts   # 只写参数与平台怪癖，逻辑全在基类
+   │     │  ├─ doubao-adapter.ts
+   │     │  ├─ kimi-adapter.ts
+   │     │  ├─ web-adapters.ts       # provider → 具体适配器的工厂（加第五家只动这里）
    │     │  └─ mock-adapter.ts  # Mock 通道（本地假数据，支持故障注入）
    │     ├─ http/routes.ts      # REST 接口
    │     └─ ws/hub.ts           # WebSocket 连接管理 + 会话订阅 + 广播
@@ -316,7 +327,90 @@ npm run login -- --keep-open  # 登完不关窗口
 
 ---
 
-## 十、常见问题
+## 十、真实发消息（网页版通道 / Step 3b）
+
+把 `.env` 里三家改成 `playwright`（或调 `POST /api/providers/route`）之后，后端就**不再走 mock**，
+而是真的在三个浏览器窗口里替你打字、点发送、读回复：
+
+```bash
+# .env
+ADAPTER_DEEPSEEK=playwright
+ADAPTER_DOUBAO=playwright
+ADAPTER_KIMI=playwright
+BROWSER_HEADLESS=false      # 必须 headed：扫码 / 过验证码都靠这扇窗
+```
+
+```bash
+npm run e2e -- "请用一句话解释什么是 WebSocket"          # 三家并发真发，打印事件流
+npm run e2e -- --image=doc/示例.png "这张图里有什么？"    # 文字 + 图片
+npm run e2e -- --providers deepseek,kimi "只发两家"
+```
+
+### 通用引擎：一条流水线伺候三家
+
+核心在 `packages/server/src/adapters/base-web-adapter.ts`，三家共用同一条流水线：
+
+1. 打开 / 复用该家的浏览器窗口（持久化 profile，登录态由 Chromium 自己维护，不用手动灌 cookie）
+2. **工作台会话变了 → 先在平台上开一个全新对话**，两个会话的上下文不互相污染
+3. 上传图片：`setInputFiles` 喂本地绝对路径（绕开系统文件选择框）→ **等缩略图真的出现**再继续
+4. 输入文字：`textarea` 直接 `fill()`；`ProseMirror` / `chat-input-editor` 这类富文本只认键盘事件，用 `insertText` 一次性插入，编辑器不吃就回退逐字敲
+5. 提交：优先 `Enter`；如果编辑器把回车当换行（读输入框发现还有残留），自动回退点发送按钮
+6. 轮询「最后一条助手消息」的文本 → 增量 diff → `sink.delta()`
+7. 结束判定：平台自己的「生成中」标志消失 **且** 文本静默满 `idleMs`；另有首字超时和整体硬超时兜底
+
+差异部分全部外置：`selectors/<provider>.json`（选择器）+ `<provider>-adapter.ts`（只写参数和平台怪癖）。
+加第五家 AI 只需要：加枚举 → 加 JSON → 加一个继承 `BaseWebAdapter` 的文件 → 在 `web-adapters.ts` 加一个 `case`。
+
+### 三家实测到的事实（2026-10-12，真发消息验证）
+
+| | 输入框 | 正文容器 | 「生成中」标志 | 图片 |
+|---|---|---|---|---|
+| DeepSeek | `textarea`（`fill` 可用，回车即发） | `div.ds-assistant-message-main-content` —— **只含正文**，「深度思考」在别的元素里 | 无（靠静默判定，给到 3.5s） | `input[type=file]` → blob 缩略图 |
+| 豆包 | `div.ProseMirror`（TipTap，只认键盘事件） | `[data-testid=receive_message] [data-testid=message_text_content]` | ✅ `data-streaming="true"`，最可靠的信号 | `input[type=file]`（2 个，取第一个能用的） |
+| Kimi | `div.chat-input-editor`（contenteditable） | `.chat-content-item-assistant .markdown-container:not(.toolcall-content-text)` | ✅ 发送按钮变成 `.send-button-container.stop` | `input.hidden-input` |
+
+> ⚠️ **Kimi 的坑**：它会把「思考链」也渲染进 DOM（`div.markdown-container.toolcall-content-text`）。
+> 选择器里必须 `:not()` 掉，否则你会把模型的内心独白当成正式回答。
+
+### 实测结果（`npm run e2e`，三家并发）
+
+```text
+→ 会话 ses_mv44810h38q0h6，已投递 3 条，等待流式回复…
+
+  +   4.6s DeepSeek  流式 48 字
+  +   5.9s 豆包        流式 73 字
+  +   7.3s Kimi      流式 48 字
+  +   7.7s 豆包        ✅ 完成  73 字 / 首字 4706ms / 总耗时 7308ms / ~61 token
+  +   8.3s DeepSeek  ✅ 完成  48 字 / 首字 4235ms / 总耗时 7880ms / ~36 token
+  +   9.8s Kimi      ✅ 完成  72 字 / 首字 6919ms / 总耗时 9384ms / ~56 token
+```
+
+带图那条同样三家全通（都正确说出图里的四种颜色），首字 6.9 / 8.3 / 12.3 秒。
+
+### 「停止生成」的边界（说清楚，不糊弄）
+
+- **一定能停止的**：后端立刻停止读取，已产出的半截内容保留并落库（`reply.done` + `stopped=true`），前端状态立即变回可交互。
+- **尽力而为的**：点平台自己的停止按钮。Kimi 有明确的 `.send-button-container.stop`；DeepSeek / 豆包当前没抓到稳定的停止按钮选择器，
+  会退化成按 `Esc` 并**在日志里明说"平台可能在后台继续生成"**。
+- 想补上：真发一条长文，用 `npm run probe -- <provider> --send "写一篇 1000 字长文…"` 观察生成期间出现的
+  `stopCandidates` / `clickables`（探针会把它们存到 `storage/probe/<provider>-stop-candidates.json`），然后把选择器填进对应的 JSON。
+
+### 平台限制与降级阶梯
+
+| 情况 | 表现 | 降级方案 |
+|---|---|---|
+| 登录态失效 | 抛 `AdapterError('auth')`，WS 推 `auth.required` | 前端弹引导 → 点顶栏「登录三家」重新扫码（L1） |
+| 人机验证 / 风控 | 抛 `AdapterError('captcha')`，同上 | 切到浏览器窗口人工过一次再重发（L1） |
+| 页面改版 | 抛 `AdapterError('selector')` | `npm run probe -- <provider> --send` 重新校准 `selectors/*.json`，**改完不用重启**（探针每次强制重读，适配器构造时也 reload）（L2） |
+| 平台限流 / 排队 | 首字超时或长时间无内容 | 错误可一键重试；降低并发频率（L3） |
+| 通道整体不可用 | — | 把该家 `ADAPTER_*` 切回 `mock`，或切 `api` 走官方 Key（L4） |
+
+> ⚠️ **务必知道**：网页版通道是「用自动化模拟真人操作你自己的账号」，不是官方接口。
+> 它受三家风控约束，也可能因为改版而失效。请克制使用频率，不要用来刷量或做批量业务。
+
+---
+
+## 十一、常见问题
 
 | 现象 | 处理 |
 |---|---|
@@ -334,6 +428,6 @@ npm run login -- --keep-open  # 登完不关窗口
 
 ---
 
-## 十一、版本
+## 十二、版本
 
 本项目改动遵循仓库根 `AGENTS.md` 的「对话即版本」规则，每次对话提交、打 tag 并推送；版本记录见仓库根 `RELEASES.md`。

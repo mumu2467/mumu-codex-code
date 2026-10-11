@@ -1,15 +1,16 @@
 {
-  "ready": "input.ds-input__input, input[type='tel'], textarea#chat-input, textarea",
-  "loggedIn": "textarea#chat-input, textarea",
+  "ready": "textarea",
+  "loggedIn": "textarea",
   "loggedOut": "input.ds-input__input, input[type='tel'], input[placeholder*='手机号']",
   "loggedOutUrl": "sign_in|/login",
-  "input": "textarea#chat-input, textarea",
-  "sendButton": "div[role='button'][aria-disabled='false'], button[type='submit'], [class*='send']",
-  "stopButton": "[aria-label*='停止'], [class*='stop']",
-  "assistantMessage": "div.ds-markdown, div[class*='ds-markdown'], div[class*='markdown']",
-  "userMessage": "div[class*='fbb737a4'], div[class*='user-message']",
+  "inputKind": "textarea",
+  "input": "textarea",
+  "sendButton": "div[role='button'][aria-disabled='false'], [class*='ds-icon-button'], [class*='send']",
+  "stopButton": "[class*='stop'], [aria-label*='停止']",
+  "assistantMessage": "div.ds-assistant-message-main-content",
+  "userMessage": "div.ds-message:has(.ds-collapsible-text), [class*='fbb737a4']",
   "newChat": "[class*='new-chat'], [aria-label*='新建']",
   "fileInput": "input[type='file']",
   "blocked": "iframe[src*='captcha'], [class*='captcha']",
-  "notes": "登录页字段已用 2026-10-12 实测校准：未登录会跳 /sign_in，页面只有两个 ds-input__input（手机号 + 验证码），没有 textarea。聊天区字段（sendButton/assistantMessage/userMessage）需登录后再跑 npm run probe -- deepseek --deep 校准。"
+  "notes": "2026-10-12 用 `npm run probe -- deepseek --send` 真发消息校准：① 输入框就是普通 textarea，fill() + Enter 即可，回车后输入框会自己清空；② 助手正文容器是 div.ds-assistant-message-main-content（实测 HTML: <div class=\"ds-markdown ds-assistant-message-main-content\"><p class=\"ds-markdown-paragraph\"><span>收到</span></p></div>）—— 只包含正文，「深度思考」的内容在别的元素里，不会混进来；③ 用户气泡里带 div.fbb737a4；④ 消息区是虚拟列表（ds-virtual-list），只有可见项在 DOM 里；⑤ 未登录会跳 /sign_in，页面只有 ds-input__input，没有 textarea，所以 loggedIn 判定很干净。"
 }

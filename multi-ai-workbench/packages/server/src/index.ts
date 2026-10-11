@@ -38,7 +38,7 @@ async function main(): Promise<void> {
   // 或者你点了界面上的「登录」，才会去开浏览器。纯 mock 模式下不占任何资源。
   const browserPool = new BrowserPool(createLogger('browser'));
   const loginService = new LoginService({ pool: browserPool, log: createLogger('login') });
-  const registry = new AdapterRegistry(config.routes, config.mockSpeed, createLogger('adapter'));
+  const registry = new AdapterRegistry(config.routes, config.mockSpeed, createLogger('adapter'), browserPool);
   await registry.initAll();
 
   const orchestrator = new Orchestrator({

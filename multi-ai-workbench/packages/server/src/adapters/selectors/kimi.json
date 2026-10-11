@@ -1,14 +1,16 @@
 {
-  "ready": "div.chat-input-editor, div[role='textbox'], [contenteditable='true']",
-  "loggedIn": "div.chat-input-editor, div[role='textbox']",
-  "loggedOut": "[class*='login-btn'], [class*='login-button'], [class*='login-panel'], [class*='login']",
-  "input": "div.chat-input-editor, div[role='textbox'], [contenteditable='true']",
-  "sendButton": "div[class*='send-button'], [class*='send-button'], [aria-label*='发送']",
-  "stopButton": "[aria-label*='停止'], div[class*='stop']",
-  "assistantMessage": "div[class*='markdown'], div[class*='segment-assistant'], [class*='assistant']",
-  "userMessage": "div[class*='segment-user'], [class*='user-content']",
-  "newChat": "[class*='new-chat'], [aria-label*='新建']",
-  "fileInput": "input[type='file'], input.hidden-input",
-  "blocked": "iframe[src*='captcha'], [class*='captcha']",
-  "notes": "已用 2026-10-12 实测校准：输入框是 div.chat-input-editor（role=textbox），发送按钮 class 含 send-button，上传用 input.hidden-input。同豆包，登录判定偏保守，可用「我已登录」手动确认。"
+  "ready": "div.chat-input-editor",
+  "loggedIn": "div.chat-input-editor",
+  "loggedOut": "[class*='login-btn'], [class*='login-panel'], [class*='login-modal']",
+  "inputKind": "editable",
+  "input": "div.chat-input-editor",
+  "sendButton": "div.send-button-container:not(.stop), div[class*='send-button']",
+  "stopButton": "div.send-button-container.stop, [class*='stop']",
+  "streaming": "div.send-button-container.stop",
+  "assistantMessage": "div.chat-content-item-assistant .markdown-container:not(.toolcall-content-text), div.segment-assistant .markdown-container:not(.toolcall-content-text)",
+  "userMessage": "div.chat-content-item-user",
+  "newChat": "a.new-chat-btn, [class*='new-chat']",
+  "fileInput": "input.hidden-input, input[type='file']",
+  "blocked": "[class*='captcha']",
+  "notes": "2026-10-12 用 `npm run probe -- kimi --send` 校准：① 输入框是 div.chat-input-editor（role=textbox，contenteditable）；② 消息区是 div.chat-content-list，用户项 .chat-content-item-user，助手项 .chat-content-item-assistant；③ **关键**：Kimi 会把「思考链」也渲染进 DOM（div.markdown-container.toolcall-content-text），正式回答是 div.markdown-container 但不带 toolcall-content-text 这个 class —— 选择器里必须 :not() 掉，否则会把思考过程当成回复；④ 生成中发送按钮会变成 div.send-button-container.stop（同时是 streaming 判据）；⑤ 上传用 input.hidden-input。"
 }
