@@ -203,6 +203,8 @@ namespace MawLauncher
 
         private Process _server;
         private bool _busy;
+        // true = 这个后端是本次启动器自己拉起来的；决定关窗时要不要把它停掉
+        private bool _startedByUs;
 
         public LauncherForm()
         {
@@ -249,7 +251,7 @@ namespace MawLauncher
             ConfigureButton(_stop, "停止并退出", 386, 172, 110);
             _stop.Click += delegate { Close(); };
 
-            FormClosing += delegate { StopServer(); };
+            FormClosing += delegate { StopServer(false); };
         }
 
         private void ConfigureButton(Button button, string text, int x, int y, int width)
@@ -298,7 +300,7 @@ namespace MawLauncher
             if (Env.ServerUp())
             {
                 SetStatus("服务已在运行，直接打开页面", Color.FromArgb(134, 239, 172));
-                SetHint("（复用已经在跑的那个后端进程）");
+                SetHint("（复用已经在跑的后端；关掉本窗口不会把它停掉）");
                 OpenBrowser();
                 return;
             }
@@ -377,6 +379,7 @@ namespace MawLauncher
             _server.Start();
             _server.BeginOutputReadLine();
             _server.BeginErrorReadLine();
+            _startedByUs = true;
             Env.Log("已启动后端 pid=" + _server.Id);
         }
 
@@ -422,7 +425,7 @@ namespace MawLauncher
             SetStatus("正在重启服务…", Color.FromArgb(253, 224, 71));
             var worker = new Thread(delegate()
             {
-                StopServer();
+                StopServer(true);
                 Thread.Sleep(1200);
                 Env.EnsureEnvFile();
                 StartServer();
@@ -444,11 +447,18 @@ namespace MawLauncher
             worker.Start();
         }
 
-        private void StopServer()
+        /// <summary>
+        /// 收尾。force=true 表示用户点了"重启服务"，必须先把当前服务停掉；
+        /// force=false 表示只是关窗口 —— 这时只有"本次启动器自己拉起来的"服务才停，
+        /// 免得把用户在终端里 npm run dev 起的后端一起带走。
+        /// </summary>
+        private void StopServer(bool force)
         {
+            bool ours = _startedByUs;
+
             try
             {
-                if (_server != null && !_server.HasExited)
+                if (_server != null && !_server.HasExited && (ours || force))
                 {
                     Env.Log("停止后端 pid=" + _server.Id);
                     Env.RunHidden("taskkill", "/PID " + _server.Id + " /T /F");
@@ -457,8 +467,16 @@ namespace MawLauncher
             }
             catch (Exception ex) { Env.Log("停止后端失败：" + ex.Message); }
             _server = null;
+            _startedByUs = false;
 
-            // 兜底：无论是不是我们起的，只要 8877 还被占着就清掉，避免"关了窗口服务还在跑"
+            // 不是我们起的、也不是"重启"：保留它，别误伤
+            if (!ours && !force)
+            {
+                Env.Log("当前后端由外部启动，关窗时予以保留");
+                return;
+            }
+
+            // 兜底：确保端口彻底释放，避免"关了窗口服务还在跑"
             Thread.Sleep(500);
             if (Env.ServerUp()) Env.KillPortListeners(Env.Port);
         }
