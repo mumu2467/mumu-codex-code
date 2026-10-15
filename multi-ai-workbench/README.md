@@ -386,11 +386,12 @@ npm run e2e -- --providers deepseek,kimi "只发两家"
 
 1. 打开 / 复用该家的浏览器窗口（持久化 profile，登录态由 Chromium 自己维护，不用手动灌 cookie）
 2. **工作台会话变了 → 先在平台上开一个全新对话**，两个会话的上下文不互相污染
-3. 上传图片：`setInputFiles` 喂本地绝对路径（绕开系统文件选择框）→ **等缩略图真的出现**再继续
-4. 输入文字：`textarea` 直接 `fill()`；`ProseMirror` / `chat-input-editor` 这类富文本只认键盘事件，用 `insertText` 一次性插入，编辑器不吃就回退逐字敲
-5. 提交：优先 `Enter`；如果编辑器把回车当换行（读输入框发现还有残留），自动回退点发送按钮
-6. 轮询「最后一条助手消息」的文本 → 增量 diff → `sink.delta()`
-7. 结束判定：平台自己的「生成中」标志消失 **且** 文本静默满 `idleMs`；另有首字超时和整体硬超时兜底
+3. **清空输入区里遗留的草稿**（附件 + 文字）—— 三家都会把没发出去的内容存在本地，新开对话也带不走，不清就会越堆越多
+4. 上传图片：`setInputFiles` 喂本地绝对路径（绕开系统文件选择框）→ **等缩略图真的出现**再继续；若这一家不吃这种格式（Kimi 不吃 webp），先用页面里的 canvas 转成 JPEG
+5. 输入文字：`textarea` 直接 `fill()`；`ProseMirror` / `chat-input-editor` 这类富文本只认键盘事件，用 `insertText` 一次性插入，编辑器不吃就回退逐字敲
+6. 提交：优先 `Enter`；如果编辑器把回车当换行（读输入框发现还有残留），自动回退点发送按钮
+7. 轮询「最后一条助手消息」的文本 → 增量 diff → `sink.delta()`（读文本时按 `noise` 选择器剔除引用角标之类的纯装饰元素）
+8. 结束判定：平台自己的「生成中」标志消失 **且** 文本静默满 `idleMs`；另有首字超时和整体硬超时兜底
 
 差异部分全部外置：`selectors/<provider>.json`（选择器）+ `<provider>-adapter.ts`（只写参数和平台怪癖）。
 加第五家 AI 只需要：加枚举 → 加 JSON → 加一个继承 `BaseWebAdapter` 的文件 → 在 `web-adapters.ts` 加一个 `case`。
@@ -401,10 +402,19 @@ npm run e2e -- --providers deepseek,kimi "只发两家"
 |---|---|---|---|---|
 | DeepSeek | `textarea`（`fill` 可用，回车即发） | `div.ds-assistant-message-main-content` —— **只含正文**，「深度思考」在别的元素里 | 无（靠静默判定，给到 3.5s） | `input[type=file]` → blob 缩略图 |
 | 豆包 | `div.ProseMirror`（TipTap，只认键盘事件） | `[data-testid=receive_message] [data-testid=message_text_content]` | ✅ `data-streaming="true"`，最可靠的信号 | `input[type=file]`（2 个，取第一个能用的） |
-| Kimi | `div.chat-input-editor`（contenteditable） | `.chat-content-item-assistant .markdown-container:not(.toolcall-content-text)` | ✅ 发送按钮变成 `.send-button-container.stop` | `input.hidden-input` |
+| Kimi | `div.chat-input-editor`（contenteditable） | `.chat-content-item-assistant .markdown-container:not(.toolcall-content-text)` | ✅ 发送按钮变成 `.send-button-container.stop` | `input.hidden-input`（**不吃 webp**，会自动转 JPEG） |
 
 > ⚠️ **Kimi 的坑**：它会把「思考链」也渲染进 DOM（`div.markdown-container.toolcall-content-text`）。
 > 选择器里必须 `:not()` 掉，否则你会把模型的内心独白当成正式回答。
+
+> ⚠️ **Kimi 的坑（2026-10-16 补）**：它的图片解析服务**不吃 webp** —— 上传接口会照收并返回 blob，
+> 但紧接着 `GetFileParseProgress` 就报 `PROCESS_STATUS_FAILED / REASON_KIMI_FILE_PARSE_JOB_FAIL`，缩略图变红；
+> 更狠的是**只要输入区里挂着一条失败附件，发送按钮就是 `div.send-button-container.disabled`**，回车和点击都发不出去
+> ——现象就是「消息发不出去，输入框里还留着内容」。前端为了省流量压的正好是 webp，所以 Kimi 用
+> `imageAccept: ["png","jpg","jpeg"]` 声明白名单，上传前自动转 JPEG（实测 png / jpeg 正常）。
+
+> ⚠️ **三家的共同坑（草稿持久化）**：没发出去的文字和附件会被平台存在本地，**连「新建对话」都不清**。
+> 所以「发送前先清空输入区」是必须的（`clearComposer()` + `attachmentDelete` 选择器），否则失败一次之后每次发送都是错的。
 
 ### 实测结果（`npm run e2e`，三家并发）
 
@@ -461,6 +471,9 @@ npm run e2e -- --providers deepseek,kimi "只发两家"
 | `Executable doesn't exist` | Playwright 自带 Chromium 没装。执行 `npx playwright install chromium`，或把 `BROWSER_CHANNEL` 设为 `msedge` / `chrome` 直接复用本机浏览器 |
 | 窗口开了但一直「等待登录」 | 选择器可能失效：先点「我已登录」手动落盘；再用 `npm run probe -- <provider> --deep` 校准 `selectors/*.json` |
 | profile 被占用 | 同一个 profile 只能被一个进程用。关掉命令行登录脚本，或先停服务 |
+| Kimi 图片传不过去 / 缩略图带红感叹号 | Kimi 的图片解析服务不吃 webp，而前端为了省流量压的是 webp。`selectors/kimi.json` 已用 `imageAccept: ["png","jpg","jpeg"]` 声明，上传前自动转 JPEG。改完重启服务生效；旧图（已落盘成 webp）在重试时也会自动转换 |
+| 消息发不出去、输入框里还留着内容 | 多半是输入区里挂着一条**上传失败的附件**（Kimi 会因此把发送按钮置灰），或者平台持久化了上次没发出去的草稿。适配器每次发送前都会先清空草稿；实在卡住就切到浏览器窗口，手动把那条红色附件删掉 |
+| 某家回复里夹着「- 7 - 11」这种碎数字 | 那是 DeepSeek 的引用来源角标（`span[data-citation-group]`，角标内部是 `opacity:0` 的占位横杠 + 一个绝对定位的序号）。`selectors/deepseek.json` 已配 `noise`，读正文时先把它临时隐藏再读 |
 
 ---
 

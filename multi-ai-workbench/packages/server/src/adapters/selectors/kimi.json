@@ -12,5 +12,11 @@
   "newChat": "a.new-chat-btn, [class*='new-chat']",
   "fileInput": "input.hidden-input, input[type='file']",
   "blocked": "[class*='captcha']",
-  "notes": "2026-10-12 用 `npm run probe -- kimi --send` 校准：① 输入框是 div.chat-input-editor（role=textbox，contenteditable）；② 消息区是 div.chat-content-list，用户项 .chat-content-item-user，助手项 .chat-content-item-assistant；③ **关键**：Kimi 会把「思考链」也渲染进 DOM（div.markdown-container.toolcall-content-text），正式回答是 div.markdown-container 但不带 toolcall-content-text 这个 class —— 选择器里必须 :not() 掉，否则会把思考过程当成回复；④ 生成中发送按钮会变成 div.send-button-container.stop（同时是 streaming 判据）；⑤ 上传用 input.hidden-input。"
+  "notes": "2026-10-12 用 `npm run probe -- kimi --send` 校准：① 输入框是 div.chat-input-editor（role=textbox，contenteditable）；② 消息区是 div.chat-content-list，用户项 .chat-content-item-user，助手项 .chat-content-item-assistant；③ **关键**：Kimi 会把「思考链」也渲染进 DOM（div.markdown-container.toolcall-content-text），正式回答是 div.markdown-container 但不带 toolcall-content-text 这个 class —— 选择器里必须 :not() 掉，否则会把思考过程当成回复；④ 生成中发送按钮会变成 div.send-button-container.stop（同时是 streaming 判据）；⑤ 上传用 input.hidden-input。 2026-10-16 补：Kimi 的图片解析服务不吃 webp —— 上传接口会收下文件并返回 blob，但随后的 GetFileParseProgress 报 PROCESS_STATUS_FAILED / REASON_KIMI_FILE_PARSE_JOB_FAIL，缩略图变红、消息发不出去（实测 png / jpeg 正常）。前端为了省流量压的是 webp，所以这里用 imageAccept 声明白名单，上传前自动转 JPEG。 2026-10-16 再补：Kimi 会把没发出去的草稿（文字 + 附件）持久化在本地，连「新建对话」都不清；而且输入区里只要有一条上传失败的附件，发送按钮就是 div.send-button-container.disabled，Enter 和点击都发不出去。所以发送前必须先用 attachmentDelete 清空草稿。",
+  "imageAccept": [
+    "png",
+    "jpg",
+    "jpeg"
+  ],
+  "attachmentDelete": ".image-delete-icon"
 }

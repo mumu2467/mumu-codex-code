@@ -55,6 +55,24 @@ const SelectorSchema = z.object({
   blocked: z.string().optional(),
   /** 正文在容器内的子选择器（可选；不给就取容器全文） */
   body: z.string().optional(),
+  /**
+   * 读取回复时要剔除的装饰元素（可选）。
+   * 命中的元素不会出现在回复文本里 —— 例如 DeepSeek 的引用角标是一层 opacity:0 的 "-" 占位
+   * 加一个绝对定位的数字，直接 innerText 会读出「- 7 - 11」这种噪声。
+   */
+  noise: z.string().optional(),
+  /**
+   * 平台能接受的图片扩展名（可选，小写、不带点，例如 ["png","jpg","jpeg"]）。
+   * 不在名单里的图片（例如 webp）会在上传前自动转成 JPEG —— Kimi 的图片解析服务不吃 webp。
+   * 不配 = 不做任何转换、原样上传。
+   */
+  imageAccept: z.array(z.string()).optional(),
+  /**
+   * 附件（已选图片）上的「删除」按钮（可选）。
+   * 发送前会用它把输入区里遗留的草稿附件清掉 —— Kimi 只要挂着一条上传失败的红色附件，
+   * 发送按钮就会变成 disabled，之后怎么发都发不出去。
+   */
+  attachmentDelete: z.string().optional(),
   /** 备注：这份选择器是什么时候、基于什么页面结构写的 */
   notes: z.string().optional(),
 });

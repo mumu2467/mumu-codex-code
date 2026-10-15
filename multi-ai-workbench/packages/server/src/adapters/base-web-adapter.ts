@@ -20,10 +20,13 @@
  *   - 页面改版：选择器会失效，抛 AdapterError('selector')，用 `npm run probe` 重新校准。
  *   - 这是"模拟真人操作你的账号"，不是官方接口；频率请克制，别拿它去刷量。
  */
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { Page } from 'playwright';
 import type { Provider } from '@maw/shared';
 import { estimateTokens, providerLabel } from '@maw/shared';
 import { PROVIDER_SITES, type BrowserPool } from '../browser/browser-pool.js';
+import { config } from '../config.js';
 import { AbortedError, AdapterError, isAbortError, sleep } from '../utils/errors.js';
 import type { Logger } from '../utils/logger.js';
 import { candidates, loadSelectors, type WebSelectors } from './selectors/index.js';
@@ -153,6 +156,11 @@ export abstract class BaseWebAdapter implements ChatAdapter {
     // 记基线：发送前"最后一条助手消息"是什么，用来识别新出现的那条
     const baseline = await this.readReply(page);
 
+    // 先把上一次没发出去、被平台持久化下来的草稿清干净（附件 + 文字）。
+    // 不清的话：新文字会被接在旧草稿后面；而只要还挂着一条上传失败的附件，
+    // 发送按钮就是禁用态 —— 表现就是「消息发不出去，输入框里还留着内容」。
+    await this.clearComposer(page);
+
     let attachmentsBefore = -1;
     if (input.images.length > 0) {
       attachmentsBefore = await this.countThumbnails(page);
@@ -271,6 +279,43 @@ export abstract class BaseWebAdapter implements ChatAdapter {
     }
   }
 
+  /**
+   * 清空输入区里遗留的草稿：附件 + 文字。
+   *
+   * 为什么必须做：三家都会把「没发出去的内容」存在本地，新开对话也带不走，
+   * 于是失败一次之后如果不清理，后面每次发送都是错的（文字越堆越长；
+   * Kimi 更狠 —— 残留一条失败附件就直接把发送按钮置灰）。
+   */
+  protected async clearComposer(page: Page): Promise<void> {
+    const deleteButton = this.selectors.attachmentDelete;
+    if (deleteButton) {
+      for (let i = 0; i < 20; i += 1) {
+        const target = page.locator(deleteButton).first();
+        if ((await target.count().catch(() => 0)) === 0) break;
+        if (!(await target.isVisible().catch(() => false))) break;
+        await target.click({ timeout: 3_000, force: true }).catch(() => undefined);
+        await page.waitForTimeout(400);
+      }
+      const left = await page.locator(deleteButton).count().catch(() => 0);
+      if (left > 0) this.log.warn(`${this.label}：还有 ${left} 个附件没删掉`);
+    }
+
+    const input = page.locator(this.selectors.input).first();
+    if ((await input.count().catch(() => 0)) === 0) return;
+    await input.click({ timeout: 5_000 }).catch(() => undefined);
+    if (this.selectors.inputKind === 'textarea') {
+      await input.fill('').catch(() => undefined);
+      return;
+    }
+    await page.keyboard.press('Control+A').catch(() => undefined);
+    await page.keyboard.press('Delete').catch(() => undefined);
+    await page.waitForTimeout(150);
+    const leftover = (await this.readInputText(page)).trim();
+    if (leftover.length > 0) {
+      this.log.warn(`${this.label}：输入框里还残留 ${leftover.length} 个字符没清掉，可能把新消息接在它后面`);
+    }
+  }
+
   /** 把文字送进输入框：textarea 直接 fill；富文本编辑器用键盘事件（ProseMirror 只认这个） */
   protected async typeText(page: Page, text: string): Promise<void> {
     const input = page.locator(this.selectors.input).first();
@@ -334,10 +379,40 @@ export abstract class BaseWebAdapter implements ChatAdapter {
       const locator = page.locator(one);
       const count = await locator.count().catch(() => 0);
       if (count === 0) continue;
-      const text = await locator.nth(count - 1).innerText({ timeout: 4_000 }).catch(() => '');
+      const text = await this.readRawText(page, one, count - 1);
       return { text: normalizeReply(text), count };
     }
     return { text: '', count: 0 };
+  }
+
+  /**
+   * 读第 index 个匹配元素的文本。
+   *
+   * 没配 noise 就走普通 innerText；配了的话，先把 noise 命中的装饰元素临时 display:none 再读，
+   * 读完立刻还原 —— 全程同步，浏览器不会在中间绘制，所以页面上看不到闪烁。
+   */
+  protected async readRawText(page: Page, selector: string, index: number): Promise<string> {
+    const noise = this.selectors.noise;
+    if (!noise) {
+      return await page.locator(selector).nth(index).innerText({ timeout: 4_000 }).catch(() => '');
+    }
+    // 注意：这里刻意传字符串脚本。tsx/esbuild 会给传给 evaluate 的函数注入 __name 之类的 helper，
+    // 那个 helper 在浏览器上下文里并不存在（详见 scripts/probe.ts 里的同一处说明）。
+    const script = `(function () {
+      var list = document.querySelectorAll(${JSON.stringify(selector)});
+      var el = list[${index}];
+      if (!el) return '';
+      var noise = el.querySelectorAll(${JSON.stringify(noise)});
+      var saved = [];
+      for (var i = 0; i < noise.length; i++) {
+        saved.push(noise[i].style.display);
+        noise[i].style.display = 'none';
+      }
+      var text = el.innerText || '';
+      for (var k = 0; k < noise.length; k++) noise[k].style.display = saved[k];
+      return text;
+    })()`;
+    return (await page.evaluate(script).catch(() => '')) as string;
   }
 
   /** 平台是否在生成中（有 streaming 选择器才判断得准，没有就靠静默时长兜底） */
@@ -356,7 +431,7 @@ export abstract class BaseWebAdapter implements ChatAdapter {
         false,
       );
     }
-    const files = images.map((img) => img.path);
+    const files = await this.prepareUploadFiles(page, images);
     const inputs = page.locator(this.selectors.fileInput);
     const total = await inputs.count().catch(() => 0);
     let uploaded = false;
@@ -373,6 +448,70 @@ export abstract class BaseWebAdapter implements ChatAdapter {
       throw new AdapterError(`${this.label}：图片上传失败（${total} 个 file input 都没吃下文件）`, 'selector', true);
     }
     await this.waitForAttachments(page, attachmentsBefore, images.length);
+  }
+
+  /**
+   * 把图片整理成「这一家能吃下去」的格式，返回交给 setInputFiles 的本地路径列表。
+   *
+   * 默认原样上传；只有在 selectors JSON 里配了 imageAccept 时才做格式白名单校验，
+   * 不在名单里的（例如 webp）先转成 JPEG。转换借用页面自己的 canvas —— 渲染页面的浏览器
+   * 天然就能解码这些格式，不用为此引入 sharp 这类原生图像库。
+   */
+  protected async prepareUploadFiles(page: Page, images: AdapterImage[]): Promise<string[]> {
+    const accept = this.selectors.imageAccept;
+    if (!accept || accept.length === 0) return images.map((img) => img.path);
+
+    const allowed = new Set(accept.map((ext) => ext.toLowerCase().replace(/^\./, '')));
+    const files: string[] = [];
+    for (const image of images) {
+      const ext = path.extname(image.path).replace(/^\./, '').toLowerCase();
+      if (ext && allowed.has(ext)) {
+        files.push(image.path);
+        continue;
+      }
+      files.push(await this.transcodeToJpeg(page, image));
+    }
+    return files;
+  }
+
+  /** 借用页面里的 canvas 转 JPEG（顺带铺白底，避免透明区域变黑），落到 <storage>/tmp/uploads */
+  private async transcodeToJpeg(page: Page, image: AdapterImage): Promise<string> {
+    const raw = await fs.readFile(image.path);
+    const dataUrl = `data:${image.mime || 'application/octet-stream'};base64,${raw.toString('base64')}`;
+    const script = `(function () {
+      var src = ${JSON.stringify(dataUrl)};
+      return new Promise(function (resolve, reject) {
+        var img = new Image();
+        img.onload = function () {
+          var canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || 1;
+          canvas.height = img.naturalHeight || 1;
+          var ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/jpeg', 0.9));
+        };
+        img.onerror = function () { reject(new Error('image decode failed')); };
+        img.src = src;
+      });
+    })()`;
+
+    const converted = (await page.evaluate(script)) as string;
+    const comma = converted.indexOf(',');
+    if (comma < 0) throw new AdapterError(`${this.label}：图片转码失败（页面没有返回 JPEG 数据）`, 'selector', true);
+
+    const dir = path.join(config.storageDir, 'tmp', 'uploads');
+    await fs.mkdir(dir, { recursive: true });
+    const name = `${path.basename(image.path, path.extname(image.path))}.jpg`;
+    const outPath = path.join(dir, name);
+    await fs.writeFile(outPath, Buffer.from(converted.slice(comma + 1), 'base64'));
+
+    const size = (await fs.stat(outPath)).size;
+    this.log.info(
+      `${this.label}：平台不吃这个图片格式，已转成 JPEG 再上传（${image.name} → ${name}，${Math.round(size / 1024)}KB）`,
+    );
+    return outPath;
   }
 
   /**
